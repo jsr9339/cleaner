@@ -1,0 +1,19 @@
+# 배포에는 정리기 화면(index.html · app.js · clean.js · style.css · lib/) · rules/ · data/ 만 올린다.
+# 쓰는 사람에게 필요한 것만 — 나머지는 저장소에 있더라도 배포에서 뺀다.
+/README.md
+/.claude/
+/tools/
+/정리/
+/정리본/
+/진단/
+*.py
+
+# 어디에도 올리지 않는 것 — 맨 위 폴더의 csv · xlsx (data/ 의 예시 파일은 남는다)
+/*.csv
+/*.xlsx
+
+# 부산물
+.git
+.env
+.env.*
+node_modules
