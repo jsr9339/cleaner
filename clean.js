@@ -2,6 +2,7 @@
  *
  *   diagnose(rows)        규칙 없이 다섯 증상을 찾는다 (빈칸 · 튀는 값 · 섞인 형식 · 중복 · 표기)
  *   apply(rows, rules)    사람이 정한 규칙대로 정리하고, 바꾼 것을 한 줄씩 남긴다
+ *                         줄을 지우는 처방: drop_rows(조건에 맞는 줄) · duplicates(같은 줄) · keep_latest(같은 번호의 이전 줄)
  *   same(a, b)            두 결과가 같은가 — «두 번 돌려도 같은 결과» 확인용
  *
  * 브라우저(window.Clean)와 node(require) 양쪽에서 쓴다. 파일은 밖으로 나가지 않는다.
@@ -163,23 +164,62 @@
       rows.forEach(row => { if (cc.when.every(w => test(row, w))) row[FLAG].push(cc.label); });
     }
 
-    let kept = rows;
+    // 지우는 처방은 셋이다. 지운 줄은 모두 변경 기록에 «지움» 으로 남는다.
+    //   ① drop_rows    조건에 맞는 줄을 지운다 (예: 테스트 접수) — 조건은 사람이 규칙에 적는다
+    //   ② duplicates   모든 칸이 같은 줄은 하나만 남긴다
+    //   ③ keep_latest  key 가 같은 줄이 여럿이면 by 칸이 가장 늦은 줄만 남긴다 (예: 접수번호가 같은 옛 처리상태 줄)
+    let alive = rows.map((row, i) => ({ row, i }));
     let dropped = 0;
-    if (rules.duplicates && rules.duplicates.action === "drop") {
-      const seen = new Set();
-      kept = [];
-      rows.forEach((row, i) => {
-        const k = JSON.stringify(cols.map(c => row[c]));
-        if (seen.has(k)) { dropped += 1; log.push({ row: i + 2, col: "(행 전체)", from: "", to: "지움", rule: rules.duplicates.why || "완전히 같은 행" }); }
-        else { seen.add(k); kept.push(row); }
+    const droppedBy = { drop_rows: 0, duplicates: 0, keep_latest: 0 };
+    const drop = (a, by, why) => {
+      dropped += 1; droppedBy[by] += 1;
+      log.push({ row: a.i + 2, col: "(행 전체)", from: "", to: "지움", rule: why });
+    };
+
+    for (const d of rules.drop_rows || []) {
+      alive = alive.filter(a => {
+        if (!d.when.every(w => test(a.row, w))) return true;
+        drop(a, "drop_rows", d.why || d.label || "조건에 맞는 행");
+        return false;
       });
     }
+
+    if (rules.duplicates && rules.duplicates.action === "drop") {
+      const seen = new Set();
+      alive = alive.filter(a => {
+        const k = JSON.stringify(cols.map(c => a.row[c]));
+        if (seen.has(k)) { drop(a, "duplicates", rules.duplicates.why || "완전히 같은 행"); return false; }
+        seen.add(k);
+        return true;
+      });
+    }
+
+    const kl = rules.keep_latest;
+    if (kl && kl.key.every(c => cols.includes(c)) && cols.includes(kl.by)) {
+      // 같은 key 에서 by 가 가장 늦은 줄을 남긴다. 같은 시각이면 앞의 줄. key 가 빈 줄은 묶지 않는다.
+      const keyOf = row => (kl.key.some(c => isBlank(row[c])) ? null : JSON.stringify(kl.key.map(c => String(row[c]).trim())));
+      const stamp = row => (isBlank(row[kl.by]) ? "" : toISODate(row[kl.by]));
+      const best = new Map();
+      alive.forEach(a => {
+        const k = keyOf(a.row);
+        if (k === null) return;
+        const cur = best.get(k);
+        if (!cur || stamp(a.row) > stamp(cur.row)) best.set(k, a);
+      });
+      alive = alive.filter(a => {
+        const k = keyOf(a.row);
+        if (k === null || best.get(k) === a) return true;
+        drop(a, "keep_latest", kl.why || `${kl.key.join("·")} 가 같은 줄 중 ${kl.by} 가 늦은 줄만 남김`);
+        return false;
+      });
+    }
+    const kept = alive.map(a => a.row);
 
     kept.forEach(row => { row[FLAG] = row[FLAG].join(" · "); });
     const flagged = kept.filter(r => r[FLAG]).length;
     const changedCols = {};
     log.forEach(l => { changedCols[l.col] = (changedCols[l.col] || 0) + 1; });
-    return { rows: kept, log, summary: { before: input.length, after: kept.length, dropped, flagged, changes: log.length - dropped, byColumn: changedCols } };
+    return { rows: kept, log, summary: { before: input.length, after: kept.length, dropped, droppedBy, flagged, changes: log.length - dropped, byColumn: changedCols } };
   }
 
   function same(a, b) {

@@ -78,9 +78,18 @@
     $("#rules-owner").textContent = `${R.title} — ${R.owner}`;
     const parts = Object.entries(R.columns || {}).map(([c, r]) => `<div class="rule"><div class="c">${esc(c)}</div><div class="w">${esc(r.why || "")}</div></div>`);
     (R.cross_checks || []).forEach(cc => parts.push(`<div class="rule"><div class="c">두 열을 같이 — ${esc(cc.label)}</div><div class="w">${esc(cc.why || "")}</div></div>`));
+    (R.drop_rows || []).forEach(d => parts.push(`<div class="rule"><div class="c">줄 지우기 — ${esc(d.when.map(w => w.join(" ")).join(" 그리고 "))}</div><div class="w">${esc(d.why || "")}</div></div>`));
     if (R.duplicates) parts.push(`<div class="rule"><div class="c">중복</div><div class="w">${esc(R.duplicates.why || "")}</div></div>`);
+    if (R.keep_latest) parts.push(`<div class="rule"><div class="c">최신 줄만 — ${esc(R.keep_latest.key.join(" · "))} 같으면 ${esc(R.keep_latest.by)} 늦은 줄</div><div class="w">${esc(R.keep_latest.why || "")}</div></div>`);
     $("#rules").innerHTML = parts.join("");
     $("#rules-order").textContent = R.order_note ? "순서 — " + R.order_note : "";
+  }
+
+  // 지운 행의 까닭을 나눠 보여 준다 — 조건에 맞는 줄 · 완전히 같은 줄 · 같은 번호의 이전 줄
+  function droppedNote(s) {
+    const names = { drop_rows: "조건", duplicates: "같은 줄", keep_latest: "이전 줄" };
+    const parts = Object.entries(s.droppedBy || {}).filter(([, n]) => n).map(([k, n]) => `${names[k]} ${n}`);
+    return parts.length > 1 || (parts.length === 1 && !s.droppedBy.duplicates) ? ` (${parts.join(" · ")})` : "";
   }
 
   // ── 적용 ────────────────────────────────────────────
@@ -92,7 +101,7 @@
     $("#sec-result").hidden = false;
     $("#stats").innerHTML = [
       ["행", `${s.before} → ${s.after}`],
-      ["지운 행 (완전 중복)", s.dropped],
+      [`지운 행${droppedNote(s)}`, s.dropped],
       ["고친 값", s.changes],
       ["표시한 행 (지우지 않음)", s.flagged],
     ].map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
